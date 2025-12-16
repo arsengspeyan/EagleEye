@@ -127,3 +127,9 @@ The `apps/` directory functions as a Monorepo, containing individual charts for 
 1.  **Ingress Layer:** SSL/TLS termination at the load balancer.
 2.  **Service Isolation:** Network Policies restrict traffic so only specific workers can access the Database ports.
 3.  **Authentication:** `Main API` issues JWT tokens for user sessions; `Sensor API` uses API Keys for device validation.
+
+
+
+
+![Architecture Diagram](images/architecture.png)
+
