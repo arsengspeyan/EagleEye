@@ -1,61 +1,131 @@
+This is a comprehensive **Technical Architecture Document (TAD)**. It is written in a standard professional format used by Solution Architects and Senior DevOps Engineers to document complex systems.
 
-# EagleEye
+You can save this as `README.md` in your repository or export it as a PDF for stakeholders.
 
+---
 
-Project Overview 
+# EagleEye IoT Platform: Technical Architecture Documentation
 
-The EagleEye Platform is a cloud-native, IoT-enabled solution designed to ingest, process, and visualize real-time sensor data alongside operational business information. It provides a scalable, integrated system to manage distributed sensor networks, synchronize with enterprise systems, and deliver actionable insights through a user-friendly interface. Built with a microservices architecture, it leverages modern DevOps practices and GitOps workflows for continuous deployment.
+**Project Name:** EagleEye Platform  
+**Version:** 2.0  
+**Architecture Style:** Event-Driven Microservices on Kubernetes  
 
-🔹 Core Components
+---
 
-### Backend APIs (Microservices):
+## 1. Executive Summary
+EagleEye is a cloud-native, scalable IoT solution designed to ingest, process, and visualize real-time sensor telemetry. The platform leverages a **Microservices Architecture** deployed on **Kubernetes**, utilizing **Kafka** for asynchronous data buffering and high-throughput processing.
 
-🔹 EagleEye.Main.API:
+The system is designed to handle:
+*   High-velocity data ingestion from distributed IoT devices.
+*   Real-time alerting based on configurable business rules.
+*   Complex analytics using ClickHouse (OLAP) and PostgreSQL (OLTP).
+*   Seamless synchronization with enterprise ERP systems (1C).
 
- The primary REST and gRPC API, providing endpoints for authentication, monitoring, asset management (e.g., contractors, vehicles, warehouses), and tracker data. It serves as the backbone for internal and external client interactions.
+---
 
+## 2. High-Level Architecture
+The system is divided into four logical domains: **Ingestion**, **Core Services**, **Alerting**, and **Infrastructure**.
 
-🔹 EagleEye.Integration.OneC.API:
+### 2.1 Architectural Diagram
+*(Refer to the system topology diagram visualizing the flow from Sensors $\to$ Kafka $\to$ Workers $\to$ Databases)*.
 
- A specialized microservice integrating with the 1C ERP system, handling data synchronization for entities such as contractors, organizations, employees, and financial records.
+---
 
+## 3. Microservices Breakdown
 
-🔹 EagleEye.Calculator.API:
+### 3.1 Domain: Sensor Ingestion
+Responsible for the entry point of raw telemetry data into the cluster.
 
- A lightweight service focused on processing sensor telemetry and performing calculations for downstream analytics. Each API follows a layered design with a Business Logic Layer (BLL) for domain rules and validation, and a Data Access Layer (DAL) using Entity Framework Core for PostgreSQL persistence.
+*   **Service:** `Sensor Messaging API`
+    *   **Role:** High-performance Gateway.
+    *   **Protocol:** REST / gRPC.
+    *   **Responsibility:** Authenticates devices, validates JSON payloads, and immediately produces messages to the **Kafka Sensor Topic**. It does *not* write to the database directly to ensure low latency.
+*   **Service:** `Sensor Messaging Worker`
+    *   **Role:** Background Consumer.
+    *   **Responsibility:** Subscribes to the **Kafka Sensor Topic**. It processes raw messages, performs data normalization, and persists data to:
+        1.  **ClickHouse:** For historical time-series analytics.
+        2.  **PostgreSQL:** For current device state (last known location/status).
 
+### 3.2 Domain: Core APIs
+The backbone of the application, handling user interactions and data aggregation.
 
+*   **Service:** `Main API` (`mymainapi`)
+    *   **Role:** The primary backend for the Frontend UI.
+    *   **Responsibility:** Manages User Authentication, Asset Management, and Organization settings.
+    *   **Data Access:** Reads/Writes user data to **PostgreSQL**.
+    *   **Inter-service:** Provides gRPC endpoints for other services (e.g., serving email templates to the Notification Worker).
+*   **Service:** `Measurement API`
+    *   **Role:** Analytics Aggregator.
+    *   **Responsibility:** Calculates complex metrics (averages, min/max) from **ClickHouse**.
+    *   **Consumers:** Used by the `Alerting Worker` to check rule violations and by the `Public API` for external consumers.
+*   **Service:** `Public API`
+    *   **Role:** External Gateway.
+    *   **Responsibility:** Exposes a limited, secure set of data to third-party developers or partners, proxying requests to the internal Core APIs.
 
-### Data & Storage Layer:
+### 3.3 Domain: Alerting & Notifications
+An event-driven subsystem for detecting anomalies and notifying users.
 
-#### PostgreSQL: 
+*   **Service:** `Alerting Worker`
+    *   **Role:** Rule Engine.
+    *   **Logic:** Periodically fetches aggregated data from `Measurement API`. Compares data against user-defined thresholds (e.g., "Temperature > 50°C").
+    *   **Action:** If a rule is breached, it pushes an event to the **Kafka Notification Queue**.
+*   **Service:** `Notification Worker`
+    *   **Role:** Delivery Agent.
+    *   **Logic:** Consumes the Notification Queue.
+        1.  Fetches HTML templates from `Main API` (via gRPC).
+        2.  Delivers messages via **Email** (SMTP) or **Telegram** API.
+        3.  Logs the alert history to **PostgreSQL**.
 
-Manages transactional data, including user profiles, configurations, and organizational metadata.
+### 3.4 Domain: Enterprise Integration
+*   **Service:** `Integration OneC API` (`integrationonecapi`)
+    *   **Role:** ERP Bridge.
+    *   **Responsibility:** Accepts webhook calls from the external **1C ERP System**. Syncs contractors, employees, and vehicle assets into the EagleEye **PostgreSQL** database.
 
-#### ClickHouse:
+---
 
-Handles high-volume sensor data analytics with optimized time-series storage.
+## 4. Data Persistence & Messaging Infrastructure
 
-#### Kafka:
+### 4.1 Apache Kafka (The Nervous System)
+Kafka acts as the buffer to decouple services and ensure data is never lost during traffic spikes.
+*   **Topic A: `sensor-data`**: High-throughput raw telemetry. Retention policy set for short-term replayability.
+*   **Topic B: `notification-queue`**: Low-throughput, high-priority alert events.
 
-Facilitates event-driven data pipelines for sensor ingestion, notification queues, and real-time processing.
+### 4.2 ClickHouse (Time-Series Storage)
+*   **Usage:** OLAP (Online Analytical Processing).
+*   **Why:** Optimized for writing millions of sensor readings per minute and running fast aggregation queries (SUM, AVG) over large datasets.
+*   **Data:** Temperature, Humidity, GPS coordinates, Battery levels, RPM.
 
-#### Alerting & Notification System:
+### 4.3 PostgreSQL (Relational Storage)
+*   **Usage:** OLTP (Online Transaction Processing).
+*   **Why:** Ensures ACID compliance for critical business data.
+*   **Data:** User Profiles, Auth Tokens, Device Metadata, Alert Rules, Notification Logs.
 
-Monitors sensor and business data, triggering alerts based on predefined rules. Delivers notifications via Email, Telegram, and Kafka queues, ensuring scalability and reliability.
+---
 
-#### Web Tier (Angular Frontend):
+## 5. Deployment Strategy (DevOps)
 
-A modern, responsive Angular-based interface that visualizes sensor data, manages organizational assets, and configures alerting rules. It communicates with backend APIs via REST and gRPC, providing an intuitive experience for end-users.
+The project utilizes **Helm** for packaging and **GitOps** for deployment.
 
-🔹 Key Capabilities
+### 5.1 Helm Chart Structure
+The `apps/` directory functions as a Monorepo, containing individual charts for each microservice.
+*   **Templates:** Standardized Kubernetes manifests (`Deployment`, `Service`, `Ingress`, `ConfigMap`).
+*   **Values:** Environment-specific configurations (Production vs. Staging).
 
-Real-time sensor data ingestion and processing from distributed devices.
-Seamless integration with the 1C ERP system for business data synchronization.
-Centralized API ecosystem for scalable client access.
-Event-driven architecture with Kafka for real-time data flow.
-Advanced analytics powered by ClickHouse and Calculator.API.
-Multi-channel alerting system (Email, Telegram) with Kafka support.
-Interactive Angular frontend for data visualization and management.
+### 5.2 Kubernetes Components
+*   **Ingress Controllers:** Manage external access (HTTP/HTTPS) to `Main API`, `Sensor Messaging API`, and `Integration API`.
+*   **Secrets Management:** Sensitive credentials (DB passwords, Telegram Tokens) are injected via Kubernetes Secrets (managed by `infrastructure/commands_secret`).
+*   **Scaling:** Stateless services (`Sensor API`, `Main API`) are configured with **Horizontal Pod Autoscalers (HPA)** to handle load variations.
 
-This platform demonstrates a robust, scalable architecture suitable for IoT and enterprise applications, deployed using Kubernetes with ArgoCD for GitOps-driven updates.
+---
+
+## 6. Communication Protocols
+*   **External Traffic:** HTTPS (JSON REST).
+*   **Internal Service-to-Service:** gRPC (Protobuf) for high-performance, strongly typed communication (e.g., `Notification Worker` $\leftrightarrow$ `Main API`).
+*   **Async Communication:** Kafka Binary Protocol.
+
+---
+
+## 7. Security Considerations
+1.  **Ingress Layer:** SSL/TLS termination at the load balancer.
+2.  **Service Isolation:** Network Policies restrict traffic so only specific workers can access the Database ports.
+3.  **Authentication:** `Main API` issues JWT tokens for user sessions; `Sensor API` uses API Keys for device validation.
