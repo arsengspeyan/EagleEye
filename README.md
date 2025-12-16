@@ -1,6 +1,4 @@
-This is a comprehensive **Technical Architecture Document (TAD)**. It is written in a standard professional format used by Solution Architects and Senior DevOps Engineers to document complex systems.
 
-You can save this as `README.md` in your repository or export it as a PDF for stakeholders.
 
 ---
 
