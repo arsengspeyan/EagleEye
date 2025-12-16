@@ -131,5 +131,5 @@ The `apps/` directory functions as a Monorepo, containing individual charts for 
 
 
 
-![Architecture Diagram](images/architecture.png)
+![Architecture Diagram](images/diagram-export-12-16-2025-3_42_19-PM.png)
 
